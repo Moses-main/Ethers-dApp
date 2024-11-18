@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import './App.css'; // Import external CSS
+import './App.css'; // External CSS
 
 const App = () => {
   const [account, setAccount] = useState(null);
-  const [balance, setBalance] = useState("0.0");
+  const [balance, setBalance] = useState("0.00");
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
+  const [network, setNetwork] = useState(null);  // Track the current network
 
   let provider;
   let signer;
 
+  // On Component Mount: Check if MetaMask is available
   useEffect(() => {
     if (typeof window.ethereum !== 'undefined') {
       provider = new ethers.BrowserProvider(window.ethereum);
@@ -21,15 +23,19 @@ const App = () => {
     }
   }, []);
 
+  // Handle Account Change
   const handleAccountChange = (accounts) => {
     setAccount(accounts[0]);
     fetchBalance();
   };
 
+  // Handle Network Change
   const handleChainChange = (chainId) => {
-    console.log('Chain changed to: ', chainId);
+    setNetwork(chainId);
+    console.log('Network changed to: ', chainId);
   };
 
+  // Connect Wallet
   const connectWallet = async () => {
     try {
       const accounts = await provider.send('eth_requestAccounts', []);
@@ -41,6 +47,7 @@ const App = () => {
     }
   };
 
+  // Fetch Balance
   const fetchBalance = async () => {
     if (!account) return;
     try {
@@ -52,6 +59,7 @@ const App = () => {
     }
   };
 
+  // Send ETH
   const sendETH = async () => {
     if (!recipient || !amount) {
       alert('Please enter recipient address and amount');
@@ -74,6 +82,37 @@ const App = () => {
     }
   };
 
+  // Disconnect Wallet
+  const disconnectWallet = () => {
+    setAccount(null);
+    setBalance(null);
+    setRecipient('');
+    setAmount('');
+  };
+
+  // Switch Network (for Testnets)
+  const switchNetwork = async (chainId) => {
+    try {
+      await provider.send('wallet_switchEthereumChain', [{ chainId }]);
+    } catch (switchError) {
+      console.error('Network switch failed:', switchError);
+    }
+  };
+
+  // Check Network and Adjust UI
+  const getNetworkName = () => {
+    switch (network) {
+      case '0x1':
+        return 'Mainnet';
+      case '0x4':
+        return 'Rinkeby Testnet';
+      case '0x5':
+        return 'Goerli Testnet';
+      default:
+        return 'Unknown Network';
+    }
+  };
+
   return (
     <div className="app-container">
       <h1 className="app-title">SendETH DApp</h1>
@@ -85,6 +124,7 @@ const App = () => {
         <div className="card">
           <h3 className="card-title">Account: {account}</h3>
           <h3 className="card-title">Balance: {balance} ETH</h3>
+          <h3 className="card-title">Network: {getNetworkName()}</h3>
           <div className="form-group">
             <input
               type="text"
@@ -103,6 +143,14 @@ const App = () => {
             <button className="button" onClick={sendETH}>
               Send ETH
             </button>
+            <button className="button" onClick={disconnectWallet}>
+              Disconnect Wallet
+            </button>
+            {/* Testnet Switch Buttons */}
+            {/* <div>
+              <button className="button" onClick={() => switchNetwork('0x4')}>Switch to Rinkeby</button>
+              <button className="button" onClick={() => switchNetwork('0x5')}>Switch to Goerli</button>
+            </div> */}
           </div>
         </div>
       )}
