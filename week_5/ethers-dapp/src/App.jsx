@@ -1,123 +1,178 @@
-import React, { useState } from "react";
-import { ethers } from "ethers";
+import React, { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
+import { Button, TextField, Typography, Container, Grid, Paper, List, ListItem, ListItemText, Divider, CircularProgress } from '@mui/material';
 
 const App = () => {
   const [account, setAccount] = useState(null);
   const [balance, setBalance] = useState(null);
-  const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("");
-  const [status, setStatus] = useState("");
+  const [recipient, setRecipient] = useState('');
+  const [amount, setAmount] = useState('');
+  const [gasFee, setGasFee] = useState(null);
+  const [isSending, setIsSending] = useState(false);
+  const [transactions, setTransactions] = useState([]);
+  
+  let provider;
+  let signer;
 
-  // Connect to wallet
+  useEffect(() => {
+    if (typeof window.ethereum !== 'undefined') {
+      provider = new ethers.BrowserProvider(window.ethereum);
+      provider.on('accountsChanged', handleAccountChange);
+      provider.on('chainChanged', handleChainChange);
+    } else {
+      alert('Please install MetaMask to use this DApp!');
+    }
+  }, []);
+
+  const handleAccountChange = (accounts) => {
+    setAccount(accounts[0]);
+    fetchBalance();
+  };
+
+  const handleChainChange = (chainId) => {
+    console.log('Chain changed to: ', chainId);
+  };
+
   const connectWallet = async () => {
-    if (!window.ethereum) {
-      alert("MetaMask is required to use this DApp!");
-      return;
-    }
-
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.send("eth_requestAccounts", []);
+      const accounts = await provider.send('eth_requestAccounts', []);
       setAccount(accounts[0]);
-      await fetchBalance(accounts[0]);
+      signer = provider.getSigner();
+      fetchBalance();
     } catch (error) {
-      console.error("Failed to connect wallet:", error);
+      console.error('Connection failed:', error);
     }
   };
 
-  // Fetch account balance
-  const fetchBalance = async (address) => {
+  const fetchBalance = async () => {
+    if (!account) return;
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const balance = await provider.getBalance(address);
-      setBalance(ethers.formatEther(balance));
+      const balance = await provider.getBalance(account);
+      const balanceInETH = ethers.formatEther(balance);
+      setBalance(balanceInETH);
     } catch (error) {
-      console.error("Failed to fetch balance:", error);
+      console.error('Error fetching balance:', error);
     }
   };
 
-  // Send ETH
-  const sendEth = async () => {
-    if (!account || !recipient || !amount) {
-      alert("All fields are required!");
+  const fetchGasFee = async () => {
+    try {
+      const gasPrice = await provider.getGasPrice();
+      setGasFee(ethers.formatEther(gasPrice));
+    } catch (error) {
+      console.error('Error fetching gas fee:', error);
+    }
+  };
+
+  const sendETH = async () => {
+    if (!recipient || !amount) {
+      alert('Please enter recipient address and amount');
       return;
     }
 
+    setIsSending(true);
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-
-      setStatus("Sending transaction...");
       const tx = await signer.sendTransaction({
         to: recipient,
         value: ethers.parseEther(amount),
       });
 
+      // Wait for the transaction to be mined
       await tx.wait();
-      setStatus("Transaction successful!");
-      await fetchBalance(account);
+
+      setTransactions((prev) => [
+        ...prev,
+        {
+          hash: tx.hash,
+          amount,
+          recipient,
+          timestamp: new Date().toLocaleString(),
+        },
+      ]);
+
+      alert('Transaction Successful!');
+      fetchBalance();
     } catch (error) {
-      console.error("Failed to send ETH:", error);
-      setStatus("Transaction failed.");
+      console.error('Transaction failed:', error);
+      alert('Transaction failed.');
+    } finally {
+      setIsSending(false);
     }
   };
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", padding: "20px" }}>
-      <h1>Ethereum DApp</h1>
+    <Container>
+      <Typography variant="h4" gutterBottom>SendETH DApp</Typography>
       {!account ? (
-        <button onClick={connectWallet} style={styles.button}>
-          Connect Wallet
-        </button>
+        <Button variant="contained" onClick={connectWallet}>Connect Wallet</Button>
       ) : (
-        <div>
-          <p>Connected Account: {account}</p>
-          <p>Balance: {balance} ETH</p>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <Typography variant="h6">Account: {account}</Typography>
+            <Typography variant="h6">Balance: {balance} ETH</Typography>
+          </Grid>
+          
+          <Grid item xs={12} sm={6}>
+            <TextField
+              label="Recipient Address"
+              fullWidth
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
+            />
+          </Grid>
+          
+          <Grid item xs={12} sm={6}>
+            <TextField
+              label="Amount (ETH)"
+              fullWidth
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+          </Grid>
 
-          <h3>Send ETH</h3>
-          <input
-            type="text"
-            placeholder="Recipient Address"
-            value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
-            style={styles.input}
-          />
-          <input
-            type="text"
-            placeholder="Amount in ETH"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            style={styles.input}
-          />
-          <button onClick={sendEth} style={styles.button}>
-            Send
-          </button>
-          <p>{status}</p>
-        </div>
+          {gasFee && (
+            <Grid item xs={12}>
+              <Typography variant="body1">Estimated Gas Fee: {gasFee} ETH</Typography>
+            </Grid>
+          )}
+
+          <Grid item xs={12}>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={sendETH}
+              disabled={isSending}
+            >
+              {isSending ? <CircularProgress size={24} /> : 'Send ETH'}
+            </Button>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Paper elevation={3}>
+              <Typography variant="h6" gutterBottom>Transaction History</Typography>
+              <List>
+                {transactions.length === 0 ? (
+                  <Typography variant="body1">No transactions yet.</Typography>
+                ) : (
+                  transactions.map((tx, index) => (
+                    <React.Fragment key={index}>
+                      <ListItem>
+                        <ListItemText
+                          primary={`Sent ${tx.amount} ETH to ${tx.recipient}`}
+                          secondary={`Transaction Hash: ${tx.hash} | Date: ${tx.timestamp}`}
+                        />
+                      </ListItem>
+                      <Divider />
+                    </React.Fragment>
+                  ))
+                )}
+              </List>
+            </Paper>
+          </Grid>
+        </Grid>
       )}
-    </div>
+    </Container>
   );
-};
-
-const styles = {
-  button: {
-    padding: "10px 20px",
-    backgroundColor: "#4CAF50",
-    color: "white",
-    border: "none",
-    borderRadius: "5px",
-    cursor: "pointer",
-    fontSize: "16px",
-  },
-  input: {
-    display: "block",
-    margin: "10px 0",
-    padding: "10px",
-    width: "100%",
-    maxWidth: "300px",
-    border: "1px solid #ccc",
-    borderRadius: "5px",
-  },
 };
 
 export default App;
