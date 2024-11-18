@@ -1,170 +1,137 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import './App.css'; // External CSS
+import { votingContractABI } from './votingContract.js';
+import './App.css';  // Import the external CSS file
 
 const App = () => {
-  const [account, setAccount] = useState(null);
-  const [balance, setBalance] = useState("0.00");
-  const [recipient, setRecipient] = useState('');
-  const [amount, setAmount] = useState('');
-  const [votingStatus, setVotingStatus] = useState(''); // Voting status message
-  const [voted, setVoted] = useState(false); // Track if the user has voted
+  const [provider, setProvider] = useState(null);
+  const [signer, setSigner] = useState(null);
+  const [votingContract, setVotingContract] = useState(null);
+  const [userAddress, setUserAddress] = useState(null);
+  const [ethAmount, setEthAmount] = useState('');
+  const [recipientAddress, setRecipientAddress] = useState('');
+  const [transactionStatus, setTransactionStatus] = useState('');
+  const [balance, setBalance] = useState("0.00");  // State to store balance
 
-  let provider;
-  let signer;
+  // Your Infura API key and Sepolia network URL
+  const INFURA_API_KEY = import.meta.env.INFURA_API_KEY;
+  const SEP_URL = `https://sepolia.infura.io/v3/${INFURA_API_KEY}`;
 
-  // Contract details
-  const contractAddress = '0xB2E1185468e57A801a54162F27725CbD5B0EB4a6';
-  const contractABI = [
-    "function vote(uint256 proposalId) public",
-    "function proposal1Votes() view returns (uint256)",
-    "function proposal2Votes() view returns (uint256)"
-  ];
-
-  const votingContract = new ethers.Contract(contractAddress, contractABI, provider);
-
-  // On Component Mount: Check if MetaMask is available
   useEffect(() => {
-    if (typeof window.ethereum !== 'undefined') {
-      provider = new ethers.BrowserProvider(window.ethereum);
-      provider.on('accountsChanged', handleAccountChange);
-      provider.on('chainChanged', handleChainChange);
-    } else {
-      alert('Please install MetaMask to use this DApp!');
-    }
+    const initialize = async () => {
+      // Check if MetaMask is installed
+      if (window.ethereum) {
+        const provider = new ethers.JsonRpcProvider(SEP_URL);
+        setProvider(provider);
+
+        // Connect to the signer (MetaMask or another wallet)
+        const signer = provider.getSigner();
+        setSigner(signer);
+
+        // Set the contract address for your deployed smart contract
+        const contractAddress = '0xB2E1185468e57A801a54162F27725CbD5B0EB4a6';
+        const contract = new ethers.Contract(contractAddress, votingContractABI, signer);
+        setVotingContract(contract);
+
+        // Get the connected wallet address
+        const address = await signer.getAddress();
+        setUserAddress(address);
+
+        // Fetch the wallet balance
+        const walletBalance = await provider.getBalance(address);
+        setBalance(ethers.utils.formatEther(walletBalance)); // Format balance to ETH
+      } else {
+        console.log('MetaMask is not installed');
+      }
+    };
+
+    initialize();
   }, []);
 
-  // Handle Account Change
-  const handleAccountChange = (accounts) => {
-    setAccount(accounts[0]);
-    fetchBalance();
-  };
+  const handleConnectWallet = async () => {
+    if (window.ethereum) {
+      try {
+        // Request account access
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const address = accounts[0];
+        setUserAddress(address);
 
-  // Handle Network Change
-  const handleChainChange = (chainId) => {
-    console.log('Network changed to: ', chainId);
-  };
-
-  // Connect Wallet
-  const connectWallet = async () => {
-    try {
-      const accounts = await provider.send('eth_requestAccounts', []);
-      setAccount(accounts[0]);
-      signer = provider.getSigner();
-      fetchBalance();
-    } catch (error) {
-      console.error('Connection failed:', error);
+        // Fetch the wallet balance after connection
+        const walletBalance = await provider.getBalance(address);
+        setBalance(ethers.utils.formatEther(walletBalance)); // Format balance to ETH
+      } catch (error) {
+        console.error("Error connecting to wallet:", error);
+      }
+    } else {
+      alert("MetaMask is not installed. Please install it to use this app.");
     }
   };
 
-  // Fetch Balance
-  const fetchBalance = async () => {
-    if (!account) return;
-    try {
-      const balance = await provider.getBalance(account);
-      const balanceInETH = ethers.formatEther(balance);
-      setBalance(balanceInETH);
-    } catch (error) {
-      console.error('Error fetching balance:', error);
-    }
-  };
-
-  // Send ETH
-  const sendETH = async () => {
-    if (!recipient || !amount) {
-      alert('Please enter recipient address and amount');
-      return;
-    }
-
+  const handleSendEth = async () => {
     try {
       const tx = await signer.sendTransaction({
-        to: recipient,
-        value: ethers.parseEther(amount),
+        to: recipientAddress,
+        value: ethers.utils.parseEther(ethAmount),
       });
-
-      // Wait for the transaction to be mined
       await tx.wait();
-      alert('Transaction Successful!');
-      fetchBalance();
+      setTransactionStatus('Transaction successful!');
     } catch (error) {
-      console.error('Transaction failed:', error);
-      alert('Transaction failed.');
+      console.error(error);
+      setTransactionStatus('Transaction failed.');
     }
   };
 
-  // Vote for a proposal
-  const vote = async (proposalId) => {
-    if (!account) {
-      alert('Please connect your wallet first!');
-      return;
-    }
-
+  const handleVote = async (proposalIndex) => {
     try {
-      const tx = await votingContract.connect(signer).vote(proposalId);
+      const tx = await votingContract.vote(proposalIndex);
       await tx.wait();
-      setVoted(true);
-      setVotingStatus(`Successfully voted for Proposal ${proposalId}`);
+      setTransactionStatus('Vote casted successfully!');
     } catch (error) {
-      console.error('Voting failed:', error);
-      setVotingStatus('Voting failed.');
+      console.error(error);
+      setTransactionStatus('Voting failed.');
     }
-  };
-
-  // Disconnect Wallet
-  const disconnectWallet = () => {
-    setAccount(null);
-    setBalance(null);
-    setRecipient('');
-    setAmount('');
-    setVotingStatus('');
-    setVoted(false);
   };
 
   return (
     <div className="app-container">
-      <h1 className="app-title">SendETH DApp</h1>
-      {!account ? (
-        <button className="button" onClick={connectWallet}>
-          Connect Wallet
-        </button>
+      <h1>Ethereum Voting App</h1>
+      {userAddress ? (
+        <>
+          <p>Connected Address: {userAddress}</p>
+          <p>Balance: {balance} ETH</p> {/* Display the balance */}
+        </>
       ) : (
-        <div className="card">
-          <h3 className="card-title">Account: {account}</h3>
-          <h3 className="card-title">Balance: {balance} ETH</h3>
-          <div className="form-group">
-            <input
-              type="text"
-              placeholder="Recipient Address"
-              value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
-              className="input"
-            />
-            <input
-              type="number"
-              placeholder="Amount (ETH)"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="input"
-            />
-            <button className="button" onClick={sendETH}>
-              Send ETH
-            </button>
-            <button className="button" onClick={disconnectWallet}>
-              Disconnect Wallet
-            </button>
-          </div>
-
-          {/* Voting Section */}
-          {!voted && (
-            <div className="voting-section">
-              <h3>Vote on Proposals</h3>
-              <button className="button" onClick={() => vote(1)}>Vote for Proposal 1</button>
-              <button className="button" onClick={() => vote(2)}>Vote for Proposal 2</button>
-            </div>
-          )}
-          {votingStatus && <p>{votingStatus}</p>}
+        <div className="wallet-section">
+          <button onClick={handleConnectWallet}>Connect Wallet</button>
         </div>
       )}
+
+      <div className="send-eth-section">
+        <h2>Send Sepolia ETH</h2>
+        <input
+          type="text"
+          placeholder="Recipient Address"
+          value={recipientAddress}
+          onChange={(e) => setRecipientAddress(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Amount (ETH)"
+          value={ethAmount}
+          onChange={(e) => setEthAmount(e.target.value)}
+        />
+        <button onClick={handleSendEth}>Send ETH</button>
+      </div>
+
+      <div className="vote-section">
+        <h2>Cast Vote</h2>
+        <button onClick={() => handleVote(0)}>Vote for Proposal 1</button>
+        <button onClick={() => handleVote(1)}>Vote for Proposal 2</button>
+      </div>
+
+      <div className={`transaction-status ${transactionStatus === 'Transaction successful!' || transactionStatus === 'Vote casted successfully!' ? 'success' : 'failed'}`}>
+        {transactionStatus}
+      </div>
     </div>
   );
 };
