@@ -7,10 +7,21 @@ const App = () => {
   const [balance, setBalance] = useState("0.00");
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
-  const [network, setNetwork] = useState(null);  // Track the current network
+  const [votingStatus, setVotingStatus] = useState(''); // Voting status message
+  const [voted, setVoted] = useState(false); // Track if the user has voted
 
   let provider;
   let signer;
+
+  // Contract details
+  const contractAddress = '0xB2E1185468e57A801a54162F27725CbD5B0EB4a6';
+  const contractABI = [
+    "function vote(uint256 proposalId) public",
+    "function proposal1Votes() view returns (uint256)",
+    "function proposal2Votes() view returns (uint256)"
+  ];
+
+  const votingContract = new ethers.Contract(contractAddress, contractABI, provider);
 
   // On Component Mount: Check if MetaMask is available
   useEffect(() => {
@@ -31,7 +42,6 @@ const App = () => {
 
   // Handle Network Change
   const handleChainChange = (chainId) => {
-    setNetwork(chainId);
     console.log('Network changed to: ', chainId);
   };
 
@@ -82,35 +92,32 @@ const App = () => {
     }
   };
 
+  // Vote for a proposal
+  const vote = async (proposalId) => {
+    if (!account) {
+      alert('Please connect your wallet first!');
+      return;
+    }
+
+    try {
+      const tx = await votingContract.connect(signer).vote(proposalId);
+      await tx.wait();
+      setVoted(true);
+      setVotingStatus(`Successfully voted for Proposal ${proposalId}`);
+    } catch (error) {
+      console.error('Voting failed:', error);
+      setVotingStatus('Voting failed.');
+    }
+  };
+
   // Disconnect Wallet
   const disconnectWallet = () => {
     setAccount(null);
     setBalance(null);
     setRecipient('');
     setAmount('');
-  };
-
-  // Switch Network (for Testnets)
-  const switchNetwork = async (chainId) => {
-    try {
-      await provider.send('wallet_switchEthereumChain', [{ chainId }]);
-    } catch (switchError) {
-      console.error('Network switch failed:', switchError);
-    }
-  };
-
-  // Check Network and Adjust UI
-  const getNetworkName = () => {
-    switch (network) {
-      case '0x1':
-        return 'Mainnet';
-      case '0x4':
-        return 'Rinkeby Testnet';
-      case '0x5':
-        return 'Goerli Testnet';
-      default:
-        return 'Unknown Network';
-    }
+    setVotingStatus('');
+    setVoted(false);
   };
 
   return (
@@ -124,7 +131,6 @@ const App = () => {
         <div className="card">
           <h3 className="card-title">Account: {account}</h3>
           <h3 className="card-title">Balance: {balance} ETH</h3>
-          <h3 className="card-title">Network: {getNetworkName()}</h3>
           <div className="form-group">
             <input
               type="text"
@@ -146,12 +152,17 @@ const App = () => {
             <button className="button" onClick={disconnectWallet}>
               Disconnect Wallet
             </button>
-            {/* Testnet Switch Buttons */}
-            {/* <div>
-              <button className="button" onClick={() => switchNetwork('0x4')}>Switch to Rinkeby</button>
-              <button className="button" onClick={() => switchNetwork('0x5')}>Switch to Goerli</button>
-            </div> */}
           </div>
+
+          {/* Voting Section */}
+          {!voted && (
+            <div className="voting-section">
+              <h3>Vote on Proposals</h3>
+              <button className="button" onClick={() => vote(1)}>Vote for Proposal 1</button>
+              <button className="button" onClick={() => vote(2)}>Vote for Proposal 2</button>
+            </div>
+          )}
+          {votingStatus && <p>{votingStatus}</p>}
         </div>
       )}
     </div>
